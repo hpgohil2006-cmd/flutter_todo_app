@@ -1,15 +1,256 @@
-# Flutter REST API Integration Project
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
-## 📌 Description
-This Flutter application integrates a public REST API, fetches JSON data, and displays it using ListView.
+final FlutterLocalNotificationsPlugin notificationsPlugin =
+FlutterLocalNotificationsPlugin();
 
-## 🔧 Technologies Used
-- Flutter
-- Dart
-- HTTP package
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
 
-## 📷 Output
-The app fetches data from a public API and displays it in a ListView format.
+  const AndroidInitializationSettings androidSettings =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
 
-## 👨‍💻 Developed By
-Your Name
+  const InitializationSettings initSettings =
+  InitializationSettings(android: androidSettings);
+
+  await notificationsPlugin.initialize(initSettings);
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: TodoScreen(),
+    );
+  }
+}
+
+class TodoScreen extends StatefulWidget {
+  const TodoScreen({super.key});
+
+  @override
+  State<TodoScreen> createState() => _TodoScreenState();
+}
+
+class _TodoScreenState extends State<TodoScreen> {
+  final List<Map<String, dynamic>> _tasks = [];
+  final TextEditingController _controller = TextEditingController();
+
+  Future<void> _scheduleNotification(
+      String title, DateTime scheduledTime) async {
+    await notificationsPlugin.zonedSchedule(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      "Reminder 🔔",
+      title,
+      tz.TZDateTime.from(scheduledTime, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'channel_id',
+          'Reminders',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  void _showAddTaskDialog() async {
+    DateTime? selectedDateTime;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Add New Task"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _controller,
+                decoration: const InputDecoration(
+                  hintText: "Enter task...",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  DateTime? date = await showDatePicker(
+                    context: context,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime(2100),
+                    initialDate: DateTime.now(),
+                  );
+
+                  if (date != null) {
+                    TimeOfDay? time = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.now(),
+                    );
+
+                    if (time != null) {
+                      selectedDateTime = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.alarm),
+                label: const Text("Set Reminder"),
+              )
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (_controller.text.isNotEmpty) {
+                  setState(() {
+                    _tasks.add({
+                      "title": _controller.text,
+                      "isDone": false,
+                    });
+                  });
+
+                  if (selectedDateTime != null) {
+                    _scheduleNotification(
+                        _controller.text, selectedDateTime!);
+                  }
+
+                  _controller.clear();
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Add Task"),
+            )
+          ],
+        );
+      },
+    );
+  }
+
+  void _toggleTask(int index) {
+    setState(() {
+      _tasks[index]["isDone"] = !_tasks[index]["isDone"];
+    });
+  }
+
+  void _deleteTask(int index) {
+    setState(() {
+      _tasks.removeAt(index);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: GestureDetector(
+        onTap: _showAddTaskDialog,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [Colors.deepPurple, Colors.pink],
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black38,
+                blurRadius: 8,
+                offset: Offset(2, 4),
+              )
+            ],
+          ),
+          child: const Icon(Icons.add, color: Colors.white, size: 30),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              const Text(
+                "Premium To-Do",
+                style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: _tasks.isEmpty
+                    ? const Center(
+                  child: Text(
+                    "No Tasks Yet 😴",
+                    style:
+                    TextStyle(fontSize: 18, color: Colors.white70),
+                  ),
+                )
+                    : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _tasks.length,
+                  itemBuilder: (context, index) {
+                    return Card(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      elevation: 5,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListTile(
+                        leading: Checkbox(
+                          activeColor: Colors.deepPurple,
+                          value: _tasks[index]["isDone"],
+                          onChanged: (_) => _toggleTask(index),
+                        ),
+                        title: Text(
+                          _tasks[index]["title"],
+                          style: TextStyle(
+                            fontSize: 18,
+                            decoration: _tasks[index]["isDone"]
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete,
+                              color: Colors.red),
+                          onPressed: () => _deleteTask(index),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
